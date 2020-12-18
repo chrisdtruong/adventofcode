@@ -36,13 +36,20 @@ def process_rule(rule: str) -> dict:
     }
 
 
-def recursive_find_rule(rules: list, bag: str, bag_count: int) -> int:
-
+def recursive_calculate_bag_depth_and_count(bag: dict, rules: list) -> int:
     for rule in rules:
-        if rule['color'] == bag rule['rules'] == []:
-            # Bottom Of Bag
-            return 0
-    pass
+        if rule['color'] == bag['color']:
+            if len(rule['rules']) == 0:
+                return bag['count']
+            else:
+                total_bags = 0
+                for next_rule in rule['rules']:
+                    count = recursive_calculate_bag_depth_and_count(next_rule, rules)
+                    total_bags += bag['count'] * count
+                
+                return total_bags + bag['count']
+        else:
+            pass
 
 
 def solve_part_one() -> int:
@@ -76,19 +83,19 @@ def solve_part_two() -> int:
     rules = get_list_of_rules()
     bag_rules = [process_rule(rule) for rule in rules]
 
-    level = 0
-    tree = {}
+
+    top_level_bags = []
 
     for bag in bag_rules:
         if bag['color'] == 'shiny gold bag':
             for rule in bag['rules']:
-                tree[rule['color']] = {'count': rule['count'], 'holds': {}}
+                top_level_bags.append(rule)
 
+    total_count = 0
+    for bag in top_level_bags:
+        total_count += recursive_calculate_bag_depth_and_count(bag, bag_rules)
 
-    print(tree)
-
-
-    return 0
+    return total_count
 
 
 def main() -> None:
