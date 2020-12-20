@@ -4,12 +4,19 @@ from itertools import takewhile
 
 from input import INPUT, SAMPLE
 
+USE_SAMPLE = True
+PREAMBLE_LENGTH = 5
 
-def get_list_of_instructions() -> list:
-    return INPUT.split('\n')
+def get_numbers() -> list:
+    if USE_SAMPLE:
+        return [int(value) for value in SAMPLE.split('\n')]
+    else:
+        return [int(value) for value in INPUT.split('\n')]
 
 
 def solve_part_one() -> int:
+    numbers = get_numbers()
+    print(numbers)
     return 0
 
 
