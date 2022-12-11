@@ -1,9 +1,6 @@
 from __future__ import annotations
 from typing import Union, List
-from input import TERMINAL_OUTPUT
-
-
-DIRECTORY_SIZE_THRESHOLD = 100000
+from input import INPUT_PART_ONE, INPUT_PART_TWO
 
 
 class Directory:
@@ -104,28 +101,66 @@ def terminal_output_ingester(filesystem: FileSystem, terminal_output: List[str])
     return filesystem
 
 
-def collect_directories_sizes_within_threshold(filesystem: FileSystem) -> List[Directory]:
+def collect_directories_sizes_within_threshold(filesystem: FileSystem, threshold: int, greater: bool) -> List[Directory]:
     inscope_directories = []
 
     for directory in filesystem.gather_all_directories(filesystem.current_location):
-        if filesystem.calculate_total_size(directory=directory) < DIRECTORY_SIZE_THRESHOLD:
-            inscope_directories.append(directory)
+        if greater:
+            if filesystem.calculate_total_size(directory=directory) >= threshold:
+                inscope_directories.append(directory)
+        else:
+            if filesystem.calculate_total_size(directory=directory) < threshold:
+                inscope_directories.append(directory)
 
     return inscope_directories
 
 
-def main():
+def solve_part_one():
+    size_threshold = 100000
+
     root_directory = Directory(name="root")
     filesystem = FileSystem(starting_directory=root_directory)
-    filesystem = terminal_output_ingester(filesystem=filesystem, terminal_output=TERMINAL_OUTPUT)
+    filesystem = terminal_output_ingester(filesystem=filesystem, terminal_output=INPUT_PART_ONE)
     filesystem.cd(move_target="/")
-    inscope_directories = collect_directories_sizes_within_threshold(filesystem)
 
+    # Part One
+    inscope_directories = collect_directories_sizes_within_threshold(filesystem, size_threshold, False)
     total_size = 0
     for directory in inscope_directories:
         total_size += filesystem.calculate_total_size(directory=directory)
+    print(f"Part 1 [Total Size]:  {total_size}")
 
-    print(f"Total Size:  {total_size}")
+
+def solve_part_two():
+    total_disk_size_available = 70000000
+    minimum_required_disk_space = 30000000
+
+    root_directory = Directory(name="root")
+    filesystem = FileSystem(starting_directory=root_directory)
+    filesystem = terminal_output_ingester(filesystem=filesystem, terminal_output=INPUT_PART_TWO)
+    filesystem.cd(move_target="/")
+
+    current_used_disk_space = filesystem.calculate_total_size()
+    current_disk_size_available = total_disk_size_available - current_used_disk_space
+    space_needed_to_be_deleted = minimum_required_disk_space - current_disk_size_available
+    inscope_directories = collect_directories_sizes_within_threshold(filesystem, space_needed_to_be_deleted, True)
+    best_fit_directory_size = None
+    best_fit_directory_excess_deleted_space = None
+    for directory in inscope_directories:
+        directory_size = filesystem.calculate_total_size(directory=directory)
+        excess_deleted_space = directory_size - minimum_required_disk_space
+        if best_fit_directory_size is None or excess_deleted_space < best_fit_directory_excess_deleted_space:
+            best_fit_directory_size = directory_size
+            best_fit_directory_excess_deleted_space = excess_deleted_space
+
+    print(f"Part 2 [Best Fit Size]:     {best_fit_directory_size}")
+
+
+def main():
+    solve_part_one()
+    solve_part_two()
+    # Part Two
+    
 
 
 if __name__ == "__main__":
