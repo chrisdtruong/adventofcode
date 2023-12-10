@@ -57,9 +57,9 @@ def calculate_intervals(numbers):
     intervals = []
 
     for index, number in enumerate(numbers):
-        is_seed = (index + 1) % 2
+        is_range = (index) % 2
 
-        if not is_seed:
+        if is_range:
             continue
 
         intervals.append([number, numbers[index + 1] + number])
@@ -89,7 +89,7 @@ def parse_input_data(input_data):
     temperature_to_humidty_map = PlantMap()
     humidity_to_location_map = PlantMap()
     resource_map_intervals = []
-
+    resource_intervals = []
     keyword_to_map = {
         "seed-to-soil map:": seed_to_soil_map,
         "soil-to-fertilizer map:": soil_to_fertilizer_map,
@@ -105,7 +105,7 @@ def parse_input_data(input_data):
         current_keyword = ""
         source_numbers = []
         destination_numbers = []
-
+        number_pairs = []
         for keyword in keyword_to_map.keys():
             if keyword in data:
                 current_keyword = keyword
@@ -115,22 +115,29 @@ def parse_input_data(input_data):
             if current_keyword not in line and line != "":
                 destination, source, rangee = line.split(" ")
                 current_map.add_range(int(destination), int(source), int(rangee))
+                number_pairs.append({
+                    "source": [int(source), int(source) + int(rangee) - 1],
+                    "dest": [int(destination), int(destination) + int(rangee) - 1]
+                })
                 source_numbers.append(int(source))
                 source_numbers.append(int(rangee))
                 destination_numbers.append(int(destination))
                 destination_numbers.append(int(rangee))
-
+        if number_pairs:
+            resource_intervals.append(number_pairs)
         if source_numbers:
             # Add source first, then destination
-            resource_map_intervals.append([
-                calculate_intervals(source_numbers),
-                calculate_intervals(destination_numbers)
-            ])
+            # print(destination_numbers)
+            resource_map_intervals.append({
+                "source": calculate_intervals(source_numbers),
+                "dest": calculate_intervals(destination_numbers)
+            })
 
     return [
         seeds,
         seed_intervals,
         resource_map_intervals,
+        resource_intervals,
         [
             seed_to_soil_map,
             soil_to_fertilizer_map,
@@ -170,7 +177,7 @@ def traverse_seed_to_location(
 
 
 def solve_part_one():
-    seeds, _, _, maps = parse_input_data(INPUT_DATA)
+    seeds, _, _, _, maps = parse_input_data(INPUT_DATA)
 
     locations = [
         traverse_seed_to_location(seed, maps)
@@ -207,16 +214,34 @@ def merge_intervals(intervals):
 
 
 class IntervalTracker:
-    def __init__(self, seed_start, seed_end, start, end):
-        self.seed_start = seed_start
-        self.seed_end = seed_end
+    """
+    Start and End are the Sources
+    Dest are errr the destinations
+    Seeds will be copied through with no transformations so we can trace it back
+    """
+    def __init__(self,  start, end, dest_start = 0, dest_end = 0):
         self.start = start
         self.end = end
+        self.dest_start = dest_start
+        self.dest_end = dest_end
+        self.dest_offset = dest_start - start
+
+
+    def __repr__(self):
+        # return f"[{self.start}, {self.end}]"
+        return f"[{self.start}, {self.end}]({self.dest_start}-{self.dest_end})"
 
     def is_in_range(self, number):
         return number >= self.start and number <= self.end
 
-    def split_interval(self, new_split_intervals):
+    def convert_from_source_to_dest(self):
+        self.start = self.dest_start
+        self.end = self.dest_end
+        self.dest_start = None
+        self.dest_end = None
+        self.dest_offset = 0
+
+    def split_interval(self, split_intervals):
         """
             Self:  [[1, 9]]
             New Split: [[3, 5], [8, 12]]
@@ -224,33 +249,107 @@ class IntervalTracker:
             Step 1: [1-2, 3-5, 6-9] - split 1,9 amongst new split
             Step 2: [1-2, 3-5, 6-7, 8-9]
         """
-        new_intervals = [self]
+        new_intervals = []
+        current_index = self.start
+        max_end = self.end
+        if current_index == max_end:
+            # print("[0] Add 1")
+            # interval is just 1 number
+            for split_interval in split_intervals:
+                if current_index >= split_interval.start and current_index <= split_interval.end:
+                    return [IntervalTracker(
+                        start=current_index,
+                        end=max_end,
+                        dest_start=current_index + split_interval.dest_offset,
+                        dest_end=max_end + split_interval.dest_offset,
+                    )]
 
-        current_start = self.start
-        current_seed_start = self.seed_start
-        current_end = self.end
-        current_seed_end = self.seed_end
-
-        # for current_interval in new_intervals:
-        for split_interval in new_split_intervals:
-            if split_interval.end <= current_start:
-                new_interval_end = split_interval.end
-                # get the new seed end
-                current_seed_end = (new_interval_end - current_start) + current_seed_start
+        # create splits until we cover this split from start to finish
+        while current_index < max_end:
+            # iterate through each split interval until our current index is past this split's max end
+            for split_interval in split_intervals:
+                split_start = split_interval.start
+                split_end = split_interval.end
+                if current_index > split_end or current_index > max_end:   # (10 > 9)
+                    continue
+                if split_start == current_index and split_end == max_end:  #  split is the same as interval
+                    # print("[1] Add 1")
+                    new_intervals.append(
+                        IntervalTracker(
+                            start=current_index,
+                            end=max_end,
+                            dest_start=split_interval.dest_start,
+                            dest_end=split_interval.dest_end
+                        )
+                    )
+                    current_index = max_end
+                elif split_start > current_index and split_end < max_end:  # split is in the middle of the interval
+                    # print("[2] Add 3")
+                    # Front interval
+                    new_intervals.append(
+                        IntervalTracker(
+                            start=current_index,
+                            end=split_start,
+                            dest_start=current_index + split_interval.dest_offset,
+                            dest_end=split_start + split_interval.dest_offset
+                        )
+                    )
+                    current_index = split_start
+                    # Middle interval
+                    new_intervals.append(
+                        IntervalTracker(
+                            start=current_index,
+                            end=split_end,
+                            dest_start=current_index + split_interval.dest_offset,
+                            dest_end=split_end + split_interval.dest_offset
+                        )
+                    )
+                    current_index = split_end
+                    # End Interval
+                    new_intervals.append(
+                        IntervalTracker(
+                            start=current_index,
+                            end=max_end,
+                            dest_start=current_index + split_interval.dest_offset,
+                            dest_end=max_end + split_interval.dest_offset
+                        )
+                    )
+                    current_index = max_end  # move index to 3 | move to 8
+                elif split_start <= current_index and split_end >= self.end:  # check if split encompasses interval
+                    # print("[3] add 1")
+                    final_split = IntervalTracker(
+                        start=current_index,
+                        end=max_end,
+                        dest_start=current_index + split_interval.dest_offset,
+                        dest_end=max_end + split_interval.dest_offset
+                    )
+                    new_intervals.append(final_split)
+                    current_index = max_end + 1
+                elif split_start < current_index and split_end < max_end:  # if split overlaps with front of interval
+                    # print("[4] Add 2")
+                    new_intervals.append(
+                        IntervalTracker(
+                            start=current_index,
+                            end=split_end,
+                            dest_start=current_index + split_interval.dest_offset,
+                            dest_end=split_end + split_interval.dest_offset
+                        )
+                    )
+                    current_index = split_end + 1
+            if current_index < max_end:
+                # print("[5] Add 1")
                 new_intervals.append(
                     IntervalTracker(
-                        seed_start=current_seed_start,
-                        seed_end=current_seed_end,
-                        start=current_start,
-                        end=new_interval_end
+                        start=current_index,
+                        end=max_end,
+                        dest_start=current_index + self.dest_offset,
+                        dest_end=max_end + self.dest_offset
                     )
                 )
-                # set the new start
-                current_start = new_interval_end + 1
-            else:
+                current_index = max_end + 1 
 
+        return new_intervals
 
-        
 
 def normalize_interval_to_mapping_scope(input_intervals, source_intervals, destination_intervals):
     """
@@ -278,15 +377,17 @@ def normalize_interval_to_mapping_scope(input_intervals, source_intervals, desti
     output_intervals = []
 
     for interval in input_intervals:
+        pass
 
+    return None
 
 
 def solve_part_two():
-    _, seed_intervals, resource_map_intervals, maps = parse_input_data(INPUT_DATA)
+    _, seed_intervals, resource_map_intervals, resource_intervals, _ = parse_input_data(INPUT_DATA)
     # sort the seed intervals
     seed_intervals.sort(key=lambda x:x[0])
 
-    print(seed_intervals)
+    # print(seed_intervals)
     # resource_map_intervals = [
     #   intervals = [
     #       source->dest[
@@ -296,39 +397,83 @@ def solve_part_two():
     #   ]
     # ]
     # sort the intervals in place
-    merged_resource_map_intervals = []
-    merged_seed_interval = merge_intervals(seed_intervals)
 
-    print(merged_seed_interval)
-    print(f"Seeds Len:  {len(merged_seed_interval)}")
-
-    for resource_intervals in resource_map_intervals:
-        resource_intervals.sort(key=lambda x:x[0][0])
-        merged_resource_map_intervals.append([
-            merge_intervals(resource_intervals[0]),
-            merge_intervals(resource_intervals[1])
-        ])
+    for intervals in resource_intervals:
+        # sort them
+        intervals.sort(key=lambda x:x['source'][0])
 
 
-    for resource_intervals in merged_resource_map_intervals:
-        print(f"Len:     {len(resource_intervals[0])}")
-    all_sorted_intervals = seed_intervals + resource_map_intervals
+    seed_intervals = [
+        IntervalTracker(
+            start=seed_interval[0],
+            end=seed_interval[1],
+        )
+        for seed_interval in seed_intervals
+    ]
 
-    lowest_seed = merged_resource_map_intervals[0][0]
+    resource_interval_list = []
 
-    for layer_number, layer in enumerate(merged_resource_map_intervals):
-        is_destination_layer = layer_number % 2
+    for intervals in resource_intervals:
+        resource_interval_trackers = []
+        for interval in intervals:
+            resource_interval_trackers.append(
+                IntervalTracker(
+                    start=interval['source'][0],
+                    end=interval['source'][1],
+                    dest_start=interval['dest'][0],
+                    dest_end=interval['dest'][1],
+                )
+            )
 
-        if is_destination_layer:
-            # find new lowest seed
-            pass
-        else:
-            # transfer to new number set
+        resource_interval_list.append(resource_interval_trackers)
 
-    return 0
 
-def interval_traverser()
+    first_resource_interval = resource_interval_list.pop(0)
 
+    current_intervals = []
+    # print(seed_intervals)
+    # print(first_resource_interval)
+
+    # create intervals where the seed is part of the first resource
+    for seed_interval in seed_intervals:
+        new_intervals = seed_interval.split_interval(first_resource_interval)
+        current_intervals += new_intervals
+
+    # print(current_intervals)
+    # print("\n")
+
+    # convert source to dest
+    for interval in current_intervals:
+        interval.convert_from_source_to_dest()
+        # Re-Sort
+    current_intervals.sort(key=lambda interval:interval.start)
+
+
+    for resource_intervals in resource_interval_list:
+        new_intervals = []
+        current_intervals_temp = current_intervals
+        # print(f"S:  {current_intervals_temp}")
+        # print(resource_intervals)
+        for interval in current_intervals_temp:
+            split_intervals = interval.split_interval(resource_intervals)
+
+            new_intervals += split_intervals
+        # print(f"F: {new_intervals}")
+        # print(f"Len:    {len(new_intervals)}")
+        # print("\n")
+        # convert from source to dest
+        for interval in new_intervals:
+            interval.convert_from_source_to_dest()
+
+        # re-sort
+        new_intervals.sort(key=lambda interval:interval.start)
+
+        current_intervals = new_intervals
+
+    # print("\nDone")
+    # print(current_intervals)
+
+    return current_intervals[0].start
 
 def main():
     print(f"Answer 1:     {solve_part_one()}")
